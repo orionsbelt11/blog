@@ -1,0 +1,128 @@
+---
+title: "Big Mac Index"
+author: "Orion Wilcox"
+date: "12/30/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r load-packages, include=FALSE}
+library(tidyverse)
+library(lubridate)
+library(ggtext)
+library(ggtextures)
+```
+
+```{r get-data}
+
+big_mac <- read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-12-22/big-mac.csv')
+
+burger_img <- "https://twemoji.maxcdn.com/v/latest/72x72/1f354.png"
+
+```
+
+
+The Economist's Big Mac Index is a tongue-in-cheek approach to creating measuring purchasing power parity, or the relative buying power of different national currencies. By comparing the cost (in US dollars) of a standard good (the Big Mac) in different countries, the index provides a measure of which currencies may be over- or under-valued.
+
+The basic idea can be explained with an absurd scenario. Suppose you really like Big Macs. In fact, you like Big Macs so much that you spend your entire weekly salary on Big Macs. If this were the case (and I hope it's not), you would probably want to know if there was some other place in the world where Big Macs are cheaper. Assume you could move to another country and keep your US salary (maybe you're doing the whole #WFH thing), where would you want to move?
+
+We can use the Economist data to find out the best place to move:
+
+
+```{r wrangle}
+
+big_macs_usp <- big_mac %>%
+  filter(!is.na(usd_adjusted)) %>%
+  #divide GDP per capita by big mac price in July 2019
+  mutate(weekly_us = 62868/52, 
+         bms_for_usp = floor(weekly_us/dollar_price)) %>%
+  filter(date == "2020-07-01") %>%
+  arrange(desc(bms_for_usp))
+
+
+```
+
+In July 2020, the GDP per capita in the US was 62868.92. A Big Mac cost $5.71 in the US. How many Big Macs would this buy you in other countries?
+
+```{r}
+big_macs_usp %>%
+  ggplot(aes(x = fct_reorder(name, bms_for_usp), y = bms_for_usp)) +
+  geom_isotype_col(image = burger_img,
+                   img_width = NULL,
+                   ncol = NA, nrow = 1, hjust = 0, vjust = .5) +
+  coord_flip() +
+  labs(title = "Worth the trip?", 
+       subtitle = "How many Big Macs does a US weekly paycheck buy around the world?") +
+  xlab("") +
+  ylab("Big Macs") +
+  theme_minimal() +
+  theme(axis.text = element_text(color = "#c29a69", size = 12),
+        axis.text.x = element_text(face = "bold"),
+        axis.title = element_text(color = "#c29a69", size =12),
+        panel.grid.major.y = element_blank(),
+        #plot.background = element_rect(fill = "#DA291C"),
+        #panel.grid = element_blank(),
+        plot.title = element_markdown(colour = "#FFC72C",
+                                      size = 32),
+        plot.subtitle = element_markdown(colour = "#DA291C",
+                                         size = 18),
+        plot.margin = margin(30, 30, 30, 30))
+
+
+
+ggsave("bigmacs.png", width = 12, height = 10, dpi = "retina") 
+
+```
+Drum roll... you're going to South Africa (or Russia if you prefer a cooler climate). 
+
+Whereas in the US the average US salary buys right around 200 Big Macs, in South Africa this will get you more than 600 Big Macs.
+
+Surprisingly, economists do not use the measures of purchasing power parity (PPP) to find the best deal on burgers. Instead indices like the Big Mac index are used to test economic theories and forecast which economies may be on the rise (or perhaps about to hit a bubble). According to economic theory, over the long run the supply and demand of the currency markets should push currency values toward parity (i.e. you should not be able to buy 3 times as many Big Macs in South Africa as the US). 
+
+We can use the Big Mac index to see if this theory holds up. 
+
+Yellow bars indicate overvalued currencies. Red indicates undervalued currencies.
+
+
+```{r plot}
+big_mac_adj <- big_mac %>%
+  filter(!is.na(usd_adjusted),
+         currency_code != "USD")
+
+
+big_mac_adj %>%
+ggplot(aes(x = date, y = usd_adjusted)) +
+  #geom_segment(aes(x = date, xend = date,
+   #                y = 0, yend = usd_adjusted)) +
+  geom_col(data = filter(big_mac_adj, usd_adjusted >= 0 ), fill = "#FFC72C") +
+  geom_col(data = filter(big_mac_adj, usd_adjusted <= 0 ), fill = "#DA291C") +  
+  geom_hline(yintercept = 0) +
+  ylim(c(-1.5, 1.5)) +
+  facet_wrap(~ name, ncol = 4) +
+  labs(title = "Who's here for the the parity?", subtitle = "How have the values of currencies changed in relation to the US Dollar? (2010-2020)",
+       caption = "Source: The Economist    |    Visualization: @orionwilcox") +
+  xlab("") +
+  ylab("") +
+  theme_minimal() +
+  theme(plot.background = element_rect(color = "#292d3e"),
+      axis.text = element_text(color = "#c29a69", size = 12),
+        axis.text.x = element_text(face = "bold"),
+        axis.title = element_text(color = "#c29a69", size =10),
+        panel.grid.major.y = element_blank(),
+        panel.grid = element_blank(),
+        plot.title = element_markdown(colour = "#FFC72C",
+                                      size = 32),
+        plot.subtitle = element_markdown(colour = "#DA291C",
+                                         size = 18),
+        plot.margin = margin(30, 30, 30, 30),
+        strip.text = element_text(face = "bold", size = 12))
+
+ ggsave('burgers.png', width = 12, height = 12, dpi = 'retina')
+
+```
+
+Most of the countries with highly overvalued currencies in 2010 (Brazil, Argentina, Colombia, Chile, Sweden, Switzerland, Peru, Turkey) have shifted towards parity with the US dollar. But others, like Hong Kong have remained steadily undervalued. Interestingly, China, which has been accused by Donald Trump of intentionally devaluing its currency, is right on parity with the US, at least when it comes to Big Macs.
