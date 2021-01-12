@@ -1,0 +1,291 @@
+---
+title: "Transit Costs"
+author: "Orion Wilcox"
+date: "1/9/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+setwd("C:/Projects/TidyTuesday/Week2/data")
+```
+
+## Transit Costs Project
+
+As I am pressed for time this week, I decided to challenge myself to finish this project in under an hour. 
+
+## Update: Well that didn't work out. Spent about 30 minutes trying figure out why setwd wasn't working. Turns out it was resetting for each code chunk. So we're at hou 3. Onward.
+
+The data cover costs for rail projects from around the world and were compiled by the Transit Costs Project. The project founders say they want to answer questions like "Why do transit-infrastructure projects in New York cost 20 times more on a per kilometer basis than in Seoul?"
+
+That seems like an interesting fact by itself and may be a good visualization. Maybe a map? Let's explore the data first. 
+
+```{r} 
+library(tidytuesdayR)
+library(tidyverse)
+library(sf)
+library(rgdal)
+library(janitor)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(egg)
+
+tuesdata <- tidytuesdayR::tt_load(2021, week=2)
+
+transit_cost <- tuesdata$transit_cost %>%
+  filter(!is.na(e))
+
+transit_cost$real_cost <- transit_cost$real_cost %>% as.numeric()
+transit_cost$cost_km_millions <- transit_cost$cost_km_millions %>% as.numeric()
+```
+
+
+## Data exploration
+
+```{r}
+transit_cost %>% summary()
+
+
+#How many countries?
+transit_cost$country %>% unique() %>% length()
+#How many cities?
+transit_cost$city %>% unique() %>% length()
+
+# What years are covered?
+
+transit_cost %>%
+  group_by(start_year) %>%
+  summarize(n = n(), start_year) %>%
+  ggplot(aes(x = start_year, y = n)) +
+  geom_col()
+  
+```
+
+So the data covers 141 cities in 57 countries and most of the projects are from the last decade. 
+
+
+Going back to that initial question, let's see which projects cost the most total and per kilometer. Then we can see if there are really noticeable differences between countries. 
+
+
+```{r}
+transit_cost %>% 
+  filter(!is.na(real_cost),
+         !is.na(line)) %>%
+  group_by(line) %>%
+  summarize(line, real_cost) %>%
+  arrange(desc(real_cost))
+```
+
+Whoa. The Doha Metro cost $90 Billion  (with a B)?
+
+```{r}
+transit_cost %>% 
+  filter(!is.na(real_cost),
+         !is.na(line)) %>%
+  group_by(country) %>%
+  summarize(country, avg_cost = mean(real_cost, na.rm = T)) %>%
+  arrange(desc(avg_cost))
+```
+
+```{r}
+transit_cost %>% 
+  filter(!is.na(real_cost),
+         !is.na(line)) %>%
+  group_by(city) %>%
+  summarize(city, avg_cost = mean(real_cost, na.rm = T)) %>%
+  arrange(desc(avg_cost))
+```
+
+So the Gulf countries have really expensive projects. Not surprising. 
+
+Seems like a map (maybe with bubbles) would be good for this project, but unfortunately coordinates are not provided. I can go ahead and geocode the city names in QGIS. 
+
+
+```{r}
+setwd("C:/Projects/TidyTuesday/Week2/data")
+
+geocoded_transit <- st_read("original/geocoded_transit_cost/geocoded.shp")
+```
+
+First, I'll make sure the geocoded data is an SF object with a WGS84 CRS.
+
+
+```{r}
+class(geocoded_transit)
+st_crs(geocoded_transit)
+```
+
+So in order to plot the cities, we need a map to plot on top off. I like the Natural Earth data and there is a useful package (installed above).
+
+```{r}
+
+world <- ne_countries(scale = "medium", returnclass = "sf") %>%
+  filter(sov_a3 != "ATA")
+class(world)
+
+```
+
+```{r}
+ggplot(data = world) +
+  geom_sf() +
+  geom_sf(data = geocoded_transit, size = 1, color = "red")
+  
+```
+
+Alright, there are our transit projects. First thng I notice is that thre is only 1 project in all of Africa. Is that because there are so few transit projects on the continent or an oversight in the data. 
+
+```{r}
+geocoded_transit$real_cost <- as.double(as.character(geocoded_transit$real_cost))
+geocoded_transit$cost_km_mi <- as.double(as.character(geocoded_transit$cost_km_mi))
+
+#drop cairo data with NAs
+
+geocoded_transit <- geocoded_transit %>% filter(!is.na(cost_km_mi))
+
+```
+
+In terms of per kilometer cost, it seems that most projects cost less than $500 USD per kilomoter, but there is a long tail of projects with significantly higher costs. 
+
+```{r}
+
+geocoded_transit %>%
+  ggplot() +
+  geom_histogram(aes(cost_km_mi))
+```
+
+```{r}
+
+geocoded_transit <- geocoded_transit %>%
+  mutate(US = case_when(country == "US" ~ "United States",
+                   TRUE ~ "Other"),
+         NYC = case_when(city == "New York" ~ "New York",
+                         TRUE ~ "Other"))
+
+geocoded_transit %>%
+  ggplot(aes(x = cost_km_mi, fill = NYC)) +
+  geom_dotplot(stackdir = "center", binwidth = 30, dotsize = 1.5, binpositions = "all", alpha = .8) +
+  theme_minimal() +
+  theme(legend.position = "bottom", 
+        plot.title = element_text(hjust = .5, size = 10),
+        plot.subtitle = element_text(hjust = .5, size = 20), 
+        legend.text = element_text(hjust = 0),
+        legend.spacing.x = unit(0.5, 'cm'),
+        axis.ticks.y = element_blank(),
+        axis.text.y = element_blank()) +
+  labs(title = "The top five most expensive urban transit projects have taken place in New York", x = "Cost per kilometer of urban transit projects (millions)", y = NULL, fill = NULL)
+
+ggsave("dots.png")
+```
+
+
+```{r}
+geocoded_transit %>%
+  select(line, city, cost_km_mi) %>%
+  arrange(desc(cost_km_mi)) %>% View()
+```
+
+
+```{r}
+transit_cost %>%
+  select(line, country, city, cost_km_millions) %>%
+  arrange(desc(cost_km_millions)) %>% View
+```
+
+Given that I know the most expensive projects are in New York, I would like to highlight this on the map. I'll need to create a column identifying the 10 most and least expensive projects per kilometer.
+
+```{r}
+geocoded_transit <- geocoded_transit %>%
+  mutate(rank = case_when(cost_km_mi > 800 ~ "Top 10",
+                          TRUE ~ "Other"))
+```
+
+
+```{r}
+ggplot(data = world) +
+  geom_sf(fill = "#333333", color = "#333333") +
+  geom_sf(data = geocoded_transit, aes(size = cost_km_mi, color = NYC), alpha = .5) + 
+ # geom_sf(data = filter(geocoded_transit, rank == "other"), aes(size = cost_km_mi), color = "gray70", alpha = .5) +
+  # geom_sf(data = filter(geocoded_transit, rank == "Top 10"), aes(size = cost_km_mi), color = "#ff0038", alpha = .5) +
+  # geom_sf(data = filter(geocoded_transit, rank == "Bottom 10"), aes(size = cost_km_mi), color = "#5bd28b", alpha = .5) +
+  scale_size(range = c(0, 8)) +
+  theme_void() +
+  theme(legend.position = "bottom", 
+        plot.title = element_text(hjust = .5, size = 10),
+        plot.subtitle = element_text(hjust = .5, size = 20), 
+        legend.text = element_text(hjust = 0, size = 8),
+        legend.spacing.x = unit(0.5, 'cm')) +
+  scale_size(
+    range = c(0.1, 10),
+    breaks = c(500, 1000, 2000, 3000),
+    labels = c("$500 million", "$1 billion", "$2 billion", "$3 billion")
+  ) +
+  labs(title = "Why are urban transit projects so expensive in New York City?", 
+       size = "Cost per kilometer \nof urban transit projects",
+              caption = "Source: The Urban Transit Project    |    Visualization: @orionwilcox") +
+  guides(color = guide_none()) 
+ggsave("map.png")
+
+```
+
+```{r}
+
+combo = ggarrange(map, dots, ncol = 1, heights = c(2,1))
+
+ggsave("combo.png")
+
+```
+
+
+
+***
+# Note to self: Always remember you need to setwd within the code chunk (wasted 20 minutes)
+```{r}
+
+setwd("C:/Projects/TidyTuesday/Week2/data")
+cities <- st_read("original/cities/cities.shp") %>%
+  select(Name, geometry)
+```
+
+
+```{r}
+non_matching <- anti_join(transit_cost, cities, by = c("city" = "Name"))
+
+non_matching$city %>% unique()
+
+```
+
+Ok, so not bad. There are 33 cities in our transit costs dataset that do not match any cities in the BatchGeo dataset. Most likely spelling errors. 
+
+I could go up and fix this when we read in the cities data but that would be manual. Let me geocode these in an outside tool. 
+
+```{r}
+
+setwd("C:/Projects/TidyTuesday/Week2/data/original")
+write_csv(non_matching, "non_matching.csv")
+
+```
+
+
+```{r}
+setwd("C:/Projects/TidyTuesday/Week2/data/original")
+
+non_matching_shp <- st_read("non_matching/nonmatching.shp")[12:31] %>%
+  select(e, geometry)
+```
+
+So, now I have a list of 436
+
+```{r}
+geocoded_cities <- left_join(transit_cost, cities, by = c("city" = "Name")) %>%
+  select(e, city, geometry) %>%
+  filter(!is.na(st_dimension(geometry)))
+
+transit_cost_shp$e <- as.factor(transit_cost_shp$e)
+
+transit_cost_shp <- left_join(transit_cost_shp, non_matching_shp, by = c("e" = "e"))
+
+```
+
+
+Well, this is a royal mess. So much for completing this in under an hour. I'm already at 2 hours and haven't gotten the data prepped yet. Taking a break!
