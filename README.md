@@ -15,3 +15,7 @@ Tidy Tuesday is "a weekly data project aimed at the R ecosystem." I store my own
 
 ### Week 2
 ![Urban Transit Infrastucture](https://github.com/orionsbelt11/tidy-tuesday/blob/main/map.png)
+
+### Week 4
+
+![Kenya Census Data](https://github.com/orionsbelt11/tidy-tuesday/blob/main/comboII.png)
